@@ -1,34 +1,56 @@
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, status
 
-from app.routes import health, tasks
+from app import storage
+from app.business_rules import validate_status_transition
+from app.models import TaskCreate, TaskPriority, TaskResponse, TaskStatus, TaskUpdate
+from app.routes import health
 
 load_dotenv()
 
 app = FastAPI(
     title="Task Tracker API",
-    description="A simple CRUD REST API for tracking tasks (Module 1 learning project).",
-    version="1.0.0",
+    description="A simple CRUD REST API for tracking tasks (Module 2 learning project).",
+    version="2.0.0",
 )
 
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Collapse a single custom field-validator error into a plain detail string.
-
-    Model-level `raise ValueError(...)` (e.g. the blank-title rule) should
-    surface as `{"detail": "<message>"}`, not Pydantic's nested error list.
-    Everything else falls back to FastAPI's default shape.
-    """
-    errors = exc.errors()
-    if len(errors) == 1 and errors[0]["type"] == "value_error":
-        message = errors[0]["msg"].removeprefix("Value error, ")
-        return JSONResponse(status_code=422, content={"detail": message})
-    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": errors}))
-
-
 app.include_router(health.router)
-app.include_router(tasks.router)
+
+
+@app.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED, tags=["tasks"])
+def create_task(payload: TaskCreate) -> TaskResponse:
+    return storage.add_task(payload)
+
+
+@app.get("/tasks", response_model=list[TaskResponse], tags=["tasks"])
+def list_tasks(status: TaskStatus | None = None, priority: TaskPriority | None = None) -> list[TaskResponse]:
+    return storage.get_all_tasks(status=status, priority=priority)
+
+
+@app.get("/tasks/{task_id}", response_model=TaskResponse, tags=["tasks"])
+def get_task(task_id: str) -> TaskResponse:
+    task = storage.get_task_by_id(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return task
+
+
+@app.patch("/tasks/{task_id}", response_model=TaskResponse, tags=["tasks"])
+def update_task(task_id: str, payload: TaskUpdate) -> TaskResponse:
+    if payload.status is not None:
+        existing = storage.get_task_by_id(task_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+        validate_status_transition(existing.status, payload.status)
+
+    updated = storage.update_task(task_id, payload)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")
+    return updated
+
+
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["tasks"])
+def delete_task(task_id: str) -> None:
+    deleted = storage.delete_task(task_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Task with id {task_id} not found")

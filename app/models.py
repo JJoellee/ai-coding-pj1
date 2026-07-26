@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class TaskStatus(str, Enum):
@@ -17,35 +17,34 @@ class TaskPriority(str, Enum):
     HIGH = "High"
 
 
-def _require_non_blank_title(v: Optional[str]) -> str:
+def _validate_title(v: Optional[str]) -> str:
     if v is None or not v.strip():
         raise ValueError("Title is required and cannot be blank")
-    return v.strip()
+    stripped = v.strip()
+    if len(stripped) > 200:
+        raise ValueError("Title must be 200 characters or fewer")
+    return stripped
 
 
-class TaskBase(BaseModel):
+class TaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str = Field(..., max_length=200)
-    description: str = ""
+    title: str
+    description: Optional[str] = ""
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     assignee: Optional[str] = None
 
     @field_validator("title")
     @classmethod
-    def title_must_not_be_blank(cls, v: str) -> str:
-        return _require_non_blank_title(v)
-
-
-class TaskCreate(TaskBase):
-    pass
+    def title_must_be_valid(cls, v: str) -> str:
+        return _validate_title(v)
 
 
 class TaskUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[TaskStatus] = None
     priority: Optional[TaskPriority] = None
@@ -53,10 +52,18 @@ class TaskUpdate(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def title_must_not_be_blank(cls, v: Optional[str]) -> Optional[str]:
-        return _require_non_blank_title(v)
+    def title_must_be_valid(cls, v: Optional[str]) -> str:
+        return _validate_title(v)
 
 
-class Task(TaskBase):
-    id: int
+class TaskResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    description: str
+    status: TaskStatus
+    priority: TaskPriority
+    assignee: Optional[str]
     created_at: datetime
+    updated_at: datetime
