@@ -1,11 +1,11 @@
 # Task Tracker API
 
-A simple CRUD REST API for tracking tasks, built with Python and FastAPI.
-Built incrementally across two learning modules — see [MODULE1_NOTES.md](MODULE1_NOTES.md)
-and [MODULE2_NOTES.md](MODULE2_NOTES.md) for the checklist artifacts and
-reflection log from each. **This README describes the current (Module 2)
-behavior**; Module 1's JSON-file/int-id version has been superseded, not kept
-side by side.
+A CRUD REST API for tracking tasks (FastAPI) with a vanilla-JS Kanban board
+frontend. Built incrementally across three learning modules — see
+[MODULE1_NOTES.md](MODULE1_NOTES.md), [MODULE2_NOTES.md](MODULE2_NOTES.md),
+and [MODULE3_NOTES.md](MODULE3_NOTES.md) for the checklist artifacts and
+reflection log from each. **This README describes current behavior**; each
+module's notes file records what it changed and why.
 
 ## Scope
 
@@ -13,11 +13,12 @@ side by side.
 `title`, `description`, `status` (`ToDo`, `InProgress`, `Done`), `priority`
 (`Low`, `Medium`, `High`), `assignee`, `created_at`, and `updated_at`.
 Filtering the task list by `status` and `priority`. Status changes are
-constrained to a fixed set of valid transitions (see below).
+constrained to a fixed set of valid transitions (see below). A browser-based
+Kanban board (`frontend/index.html`) for viewing, dragging, and editing tasks.
 
 **Out of scope:** authentication, user accounts, multi-tenancy, real-time
-updates, mobile app, notifications, a production database, deployment, and a
-frontend.
+sync, mobile app, notifications, a production database, deployment, and any
+frontend framework or build step.
 
 ## What changed in Module 2 (vs. Module 1)
 
@@ -59,6 +60,9 @@ frontend.
 - **Business rule:** status transitions are validated against an explicit
   allow-list (`app/business_rules.py`) rather than an if/elif chain, so the
   rule and its "what's allowed" error message can't drift apart.
+- **CORS:** the frontend is served separately from the backend (a static
+  file server, not FastAPI), so `CORSMiddleware` allows a small explicit
+  list of local dev origins — not `*` — matching how it's actually run.
 
 ## Project structure
 
@@ -72,12 +76,14 @@ task-tracker/
     validators.py           # standalone validate_task() utility, independent of FastAPI/Pydantic
     routes/
       health.py             # GET /health
+  frontend/
+    index.html              # Kanban board: vanilla HTML/CSS/JS, no build step
   data/
     tasks.json               # unused leftover from Module 1 (kept for the record only)
   tests/
     conftest.py               # client fixture + autouse storage._reset()
     test_health.py
-    test_tasks.py              # Module 2 CRUD/filter/transition tests
+    test_tasks.py              # CRUD/filter/transition + PATCH edge-case tests
     test_models.py              # Pydantic-level rules (blank title, max length, extra="forbid", etc.)
     test_validators.py
     verify_a.py                 # standalone script version of the test_models.py checks
@@ -85,6 +91,7 @@ task-tracker/
   .env.example
   MODULE1_NOTES.md
   MODULE2_NOTES.md
+  MODULE3_NOTES.md
 ```
 
 ## Setup
@@ -109,6 +116,20 @@ Swagger UI: http://127.0.0.1:8000/docs
 ReDoc: http://127.0.0.1:8000/redoc
 
 Data lives in memory only — restarting the server clears all tasks.
+
+## Run the frontend
+
+The board is a static file — serve it with any local static server (it
+can't be opened as `file://`, since `fetch` needs a real origin for CORS to
+apply). With the backend already running on `8000`:
+
+```bash
+cd frontend
+python -m http.server 5500
+```
+
+Open http://localhost:5500/index.html. If you serve it from a different
+port, add that origin to `LOCAL_FRONTEND_ORIGINS` in `app/main.py`.
 
 ## Test
 

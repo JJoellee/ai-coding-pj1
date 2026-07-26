@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import storage
 from app.business_rules import validate_status_transition
@@ -12,6 +13,23 @@ app = FastAPI(
     title="Task Tracker API",
     description="A simple CRUD REST API for tracking tasks (Module 2 learning project).",
     version="2.0.0",
+)
+
+# Module 3: frontend/index.html is served separately (e.g. a local static
+# server) from the backend's own origin, so it needs CORS to fetch here.
+# Local dev origins only, matching how the frontend is actually run.
+LOCAL_FRONTEND_ORIGINS = [
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=LOCAL_FRONTEND_ORIGINS,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 app.include_router(health.router)

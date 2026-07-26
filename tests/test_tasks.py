@@ -106,6 +106,17 @@ def test_patch_same_status_returns_422(client, created_task):
     assert response.status_code == 422
 
 
+def test_patch_invalid_transition_does_not_apply_other_fields(client, created_task):
+    response = client.patch(
+        f"/tasks/{created_task['id']}",
+        json={"title": "Updated title", "status": "Done"},
+    )
+    assert response.status_code == 422
+
+    unchanged = client.get(f"/tasks/{created_task['id']}")
+    assert unchanged.json()["title"] == created_task["title"]
+
+
 def test_delete_existing_returns_204_no_body(client, created_task):
     response = client.delete(f"/tasks/{created_task['id']}")
     assert response.status_code == 204
