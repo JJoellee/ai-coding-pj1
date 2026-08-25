@@ -131,6 +131,64 @@
 
   .assignee { color: var(--muted); }
 
+  .card-due { font-size: 0.78rem; color: var(--muted); margin: 0 0 0.4rem; }
+  .overdue-pill {
+    display: inline-block;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-weight: 600;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    margin-left: 0.4rem;
+  }
+
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.65rem 0.85rem;
+  }
+  .filter-bar input[type="search"] {
+    flex: 1 1 220px;
+    min-width: 160px;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .filter-bar select {
+    padding: 0.45rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .filter-bar label.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0;
+    white-space: nowrap;
+  }
+  .filter-bar button {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    color: var(--text);
+  }
+  .filter-bar button:hover { background: #f4f5f7; }
+
   .edit-btn {
     width: 100%;
     padding: 0.35rem;
@@ -246,6 +304,27 @@
 </header>
 
 <main>
+  <div class="filter-bar">
+    <input type="search" id="filter-search" placeholder="Search title or description…" aria-label="Search tasks" />
+    <select id="filter-status" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="ToDo">To Do</option>
+      <option value="InProgress">In Progress</option>
+      <option value="Done">Done</option>
+    </select>
+    <select id="filter-priority" aria-label="Filter by priority">
+      <option value="">All priorities</option>
+      <option value="Low">Low</option>
+      <option value="Medium">Medium</option>
+      <option value="High">High</option>
+    </select>
+    <label class="checkbox-label">
+      <input type="checkbox" id="filter-overdue" />
+      Overdue only
+    </label>
+    <button type="button" id="filter-clear-btn">Clear filters</button>
+  </div>
+
   <div id="board-status" class="board-status hidden"></div>
 
   <div id="board" class="board hidden">
@@ -305,6 +384,9 @@
         <option value="High">High</option>
       </select>
 
+      <label for="field-due-date">Due date</label>
+      <input type="date" id="field-due-date" />
+
       <label for="field-assignee">Assignee</label>
       <input type="text" id="field-assignee" placeholder="Unassigned" />
 
@@ -334,6 +416,20 @@
   const formErrorEl = document.getElementById("form-error");
   const titleErrorEl = document.getElementById("title-error");
   const toastEl = document.getElementById("toast");
+  const filterSearchEl = document.getElementById("filter-search");
+  const filterStatusEl = document.getElementById("filter-status");
+  const filterPriorityEl = document.getElementById("filter-priority");
+  const filterOverdueEl = document.getElementById("filter-overdue");
+  const filterClearBtn = document.getElementById("filter-clear-btn");
+  const formFields = {
+    taskId: document.getElementById("task-id"),
+    title: document.getElementById("field-title"),
+    description: document.getElementById("field-description"),
+    status: document.getElementById("field-status"),
+    priority: document.getElementById("field-priority"),
+    dueDate: document.getElementById("field-due-date"),
+    assignee: document.getElementById("field-assignee"),
+  };
 
   let tasks = [];
   let boardState = "loading"; // "loading" | "loaded" | "error"
@@ -343,6 +439,8 @@
   let draggedTaskId = null;
   let draggedFromStatus = null;
   let toastTimer = null;
+  let searchDebounceTimer = null;
+  let activeFilters = { search: "", status: "", priority: "", overdue: false };
 
   function escapeHtml(value) {
     const div = document.createElement("div");
@@ -389,10 +487,15 @@
       : "";
     const assignee = task.assignee ? escapeHtml(task.assignee) : "Unassigned";
     const priorityClass = "priority-" + String(task.priority).toLowerCase();
+    const overduePill = task.is_overdue ? '<span class="overdue-pill">Overdue</span>' : "";
+    const dueLine = task.due_date
+      ? `<p class="card-due">Due: ${escapeHtml(task.due_date)}${overduePill}</p>`
+      : "";
     return `
       <article class="card" draggable="true" data-id="${escapeHtml(task.id)}" data-status="${escapeHtml(task.status)}">
         <h3 class="card-title">${escapeHtml(task.title)}</h3>
         ${description}
+        ${dueLine}
         <div class="card-meta">
           <span class="priority-badge ${priorityClass}">${escapeHtml(task.priority)}</span>
           <span class="assignee">${assignee}</span>
@@ -439,11 +542,21 @@
     }
   }
 
+  function buildTasksQueryString() {
+    const params = new URLSearchParams();
+    if (activeFilters.search) params.set("search", activeFilters.search);
+    if (activeFilters.status) params.set("status", activeFilters.status);
+    if (activeFilters.priority) params.set("priority", activeFilters.priority);
+    if (activeFilters.overdue) params.set("overdue", "true");
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  }
+
   async function fetchTasks() {
     boardState = "loading";
     renderBoard();
     try {
-      const res = await fetch(`${API_BASE}/tasks`);
+      const res = await fetch(`${API_BASE}/tasks${buildTasksQueryString()}`);
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       tasks = await res.json();
       boardState = "loaded";
@@ -539,6 +652,40 @@
     }
   });
 
+  // --- Filter bar ------------------------------------------------------
+
+  filterSearchEl.addEventListener("input", () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      activeFilters.search = filterSearchEl.value.trim();
+      fetchTasks();
+    }, 300);
+  });
+
+  filterStatusEl.addEventListener("change", () => {
+    activeFilters.status = filterStatusEl.value;
+    fetchTasks();
+  });
+
+  filterPriorityEl.addEventListener("change", () => {
+    activeFilters.priority = filterPriorityEl.value;
+    fetchTasks();
+  });
+
+  filterOverdueEl.addEventListener("change", () => {
+    activeFilters.overdue = filterOverdueEl.checked;
+    fetchTasks();
+  });
+
+  filterClearBtn.addEventListener("click", () => {
+    activeFilters = { search: "", status: "", priority: "", overdue: false };
+    filterSearchEl.value = "";
+    filterStatusEl.value = "";
+    filterPriorityEl.value = "";
+    filterOverdueEl.checked = false;
+    fetchTasks();
+  });
+
   // --- Edit button (event delegation) --------------------------------
 
   boardEl.addEventListener("click", (e) => {
@@ -559,7 +706,7 @@
 
   function showModal() {
     modalOverlay.classList.remove("hidden");
-    document.getElementById("field-title").focus();
+    formFields.title.focus();
   }
 
   function closeModal() {
@@ -574,9 +721,10 @@
     editingOriginalTask = null;
     modalTitleEl.textContent = "New Task";
     taskForm.reset();
-    document.getElementById("task-id").value = "";
-    document.getElementById("field-status").value = "ToDo";
-    document.getElementById("field-priority").value = "Medium";
+    formFields.taskId.value = "";
+    formFields.status.value = "ToDo";
+    formFields.priority.value = "Medium";
+    formFields.dueDate.value = "";
     clearFormErrors();
     showModal();
   }
@@ -585,12 +733,13 @@
     modalMode = "edit";
     editingOriginalTask = task;
     modalTitleEl.textContent = "Edit Task";
-    document.getElementById("task-id").value = task.id;
-    document.getElementById("field-title").value = task.title;
-    document.getElementById("field-description").value = task.description || "";
-    document.getElementById("field-status").value = task.status;
-    document.getElementById("field-priority").value = task.priority;
-    document.getElementById("field-assignee").value = task.assignee || "";
+    formFields.taskId.value = task.id;
+    formFields.title.value = task.title;
+    formFields.description.value = task.description || "";
+    formFields.status.value = task.status;
+    formFields.priority.value = task.priority;
+    formFields.dueDate.value = task.due_date || "";
+    formFields.assignee.value = task.assignee || "";
     clearFormErrors();
     showModal();
   }
@@ -611,23 +760,25 @@
     e.preventDefault();
     clearFormErrors();
 
-    const titleValue = document.getElementById("field-title").value.trim();
+    const titleValue = formFields.title.value.trim();
     if (!titleValue) {
       titleErrorEl.textContent = "Title is required";
       titleErrorEl.classList.remove("hidden");
       return;
     }
 
-    const assigneeRaw = document.getElementById("field-assignee").value.trim();
-    const selectedStatus = document.getElementById("field-status").value;
-    const taskId = document.getElementById("task-id").value;
+    const assigneeRaw = formFields.assignee.value.trim();
+    const dueDateRaw = formFields.dueDate.value;
+    const selectedStatus = formFields.status.value;
+    const taskId = formFields.taskId.value;
     const isEdit = modalMode === "edit" && taskId;
 
     const payload = {
       title: titleValue,
-      description: document.getElementById("field-description").value.trim(),
-      priority: document.getElementById("field-priority").value,
+      description: formFields.description.value.trim(),
+      priority: formFields.priority.value,
       assignee: assigneeRaw === "" ? null : assigneeRaw,
+      due_date: dueDateRaw === "" ? null : dueDateRaw,
     };
 
     // Only include status if it actually changed — PATCHing the same

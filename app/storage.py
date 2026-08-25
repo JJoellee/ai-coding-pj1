@@ -2,7 +2,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.models import TaskCreate, TaskPriority, TaskResponse, TaskStatus, TaskUpdate
+from app.models import (
+    TaskCreate,
+    TaskPriority,
+    TaskResponse,
+    TaskStatus,
+    TaskUpdate,
+    is_task_overdue,
+)
 
 _tasks: dict[str, TaskResponse] = {}
 
@@ -17,6 +24,7 @@ def add_task(payload: TaskCreate) -> TaskResponse:
         status=payload.status,
         priority=payload.priority,
         assignee=payload.assignee,
+        due_date=payload.due_date,
         created_at=now,
         updated_at=now,
     )
@@ -27,12 +35,27 @@ def add_task(payload: TaskCreate) -> TaskResponse:
 def get_all_tasks(
     status: Optional[TaskStatus] = None,
     priority: Optional[TaskPriority] = None,
+    assignee: Optional[str] = None,
+    overdue: Optional[bool] = None,
+    search: Optional[str] = None,
 ) -> list[TaskResponse]:
     tasks = list(_tasks.values())
     if status is not None:
         tasks = [t for t in tasks if t.status == status]
     if priority is not None:
         tasks = [t for t in tasks if t.priority == priority]
+    if assignee is not None:
+        tasks = [t for t in tasks if t.assignee == assignee]
+    if overdue is not None:
+        tasks = [t for t in tasks if is_task_overdue(t.due_date, t.status) == overdue]
+    if search is not None:
+        needle = search.strip().lower()
+        if needle:
+            tasks = [
+                t
+                for t in tasks
+                if needle in t.title.lower() or needle in t.description.lower()
+            ]
     return tasks
 
 

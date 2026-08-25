@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
 
 class TaskStatus(str, Enum):
@@ -26,6 +26,17 @@ def _validate_title(v: Optional[str]) -> str:
     return stripped
 
 
+def is_task_overdue(due_date: Optional[date], status: "TaskStatus") -> bool:
+    """A task is overdue if it has a due date in the past and isn't Done.
+
+    Deliberately not stored anywhere — always computed against "today" at
+    read time, so it can never go stale between requests.
+    """
+    if due_date is None or status == TaskStatus.DONE:
+        return False
+    return due_date < date.today()
+
+
 class TaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -34,6 +45,7 @@ class TaskCreate(BaseModel):
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     assignee: Optional[str] = None
+    due_date: Optional[date] = None
 
     @field_validator("title")
     @classmethod
@@ -49,6 +61,7 @@ class TaskUpdate(BaseModel):
     status: Optional[TaskStatus] = None
     priority: Optional[TaskPriority] = None
     assignee: Optional[str] = None
+    due_date: Optional[date] = None
 
     @field_validator("title")
     @classmethod
@@ -65,5 +78,11 @@ class TaskResponse(BaseModel):
     status: TaskStatus
     priority: TaskPriority
     assignee: Optional[str]
+    due_date: Optional[date] = None
     created_at: datetime
     updated_at: datetime
+
+    @computed_field
+    @property
+    def is_overdue(self) -> bool:
+        return is_task_overdue(self.due_date, self.status)
