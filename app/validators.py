@@ -12,6 +12,29 @@ VALID_PRIORITIES = ("Low", "Medium", "High")
 
 
 def validate_task(task: dict[str, Any]) -> dict[str, Any]:
+    """Validate a plain task dict against the same core rules as the API.
+
+    Standalone stdlib-only check, independent of Pydantic/FastAPI — and
+    deliberately not called from any route. Every request already goes
+    through equivalent validation via ``TaskCreate``/``TaskUpdate``
+    (``app/models.py``), so wiring this in would just duplicate that
+    check. This function exists for validating a task dict from *outside*
+    the request pipeline — e.g. a bulk import or a data file — where
+    there's no Pydantic model in the loop already.
+
+    Args:
+        task: A dict that may contain ``title``, ``status``, and
+            ``priority`` keys. Other keys are ignored.
+
+    Returns:
+        ``{"valid": bool, "errors": list[str]}``. ``valid`` is ``True``
+        only if ``errors`` is empty. Checks title presence/non-blankness,
+        and that ``status``/``priority`` are each one of the fixed literal
+        values in ``VALID_STATUSES``/``VALID_PRIORITIES`` — note these are
+        hardcoded string tuples here, not imported from
+        ``app.models.TaskStatus``/``TaskPriority``, so the two could drift
+        if one changes without the other.
+    """
     errors: list[str] = []
 
     title = task.get("title")

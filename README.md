@@ -1,131 +1,35 @@
 # Task Tracker API
 
-A CRUD REST API for tracking tasks (FastAPI) with a vanilla-JS Kanban board
-frontend. Built incrementally across three learning modules plus a
-mid-course project — see [MODULE1_NOTES.md](MODULE1_NOTES.md),
+## 1. Project overview
+
+A CRUD REST API for tracking tasks, built with FastAPI, plus a vanilla-JS
+Kanban board frontend (no framework, no build step). Each task has a
+title, description, status (`ToDo`/`InProgress`/`Done`, with a fixed
+allow-list of valid transitions), priority, assignee, and an optional due
+date with a computed "overdue" flag. The task list supports filtering and
+free-text search, all combinable. Built incrementally across an
+AI-assisted coding course — see [MODULE1_NOTES.md](MODULE1_NOTES.md),
 [MODULE2_NOTES.md](MODULE2_NOTES.md), [MODULE3_NOTES.md](MODULE3_NOTES.md),
-and [docs/midcourse/](docs/midcourse/) for the checklist artifacts,
-prompt log, verification evidence, and reflection from each. **This README
-describes current behavior**; those files record what changed and why.
+and [docs/midcourse/](docs/midcourse/) for what changed at each stage and
+why. **This README describes current behavior only.**
 
-## Scope
+## 2. Prerequisites
 
-**In scope:** create, view, update, and delete tasks. Each task has `id`,
-`title`, `description`, `status` (`ToDo`, `InProgress`, `Done`), `priority`
-(`Low`, `Medium`, `High`), `assignee`, `due_date`, `is_overdue` (computed),
-`created_at`, and `updated_at`. Filtering the task list by `status`,
-`priority`, `assignee`, `overdue`, and free-text `search` (title/
-description), all combinable. Status changes are constrained to a fixed set
-of valid transitions (see below). A browser-based Kanban board
-(`frontend/index.html`) for viewing, dragging, filtering, searching, and
-editing tasks.
+- Python **3.11** — pinned in CI (`.github/workflows/ci.yml`) and
+  `Dockerfile`, both with real, repeated, passing automated evidence
+  behind them. 3.12.2 also worked throughout local development for this
+  entire project with no issues. 3.10 — what Module 1's original README
+  stated — was never actually tested against; treat that number as
+  unverified, not this one.
+- `pip`
+- A modern browser, to use `frontend/index.html`
+- `git`
+- Docker — only needed for the "Run with Docker" section below; everything
+  else works without it.
 
-**Out of scope:** authentication, user accounts, multi-tenancy, real-time
-sync, mobile app, notifications, a production database, deployment, tags,
-comments, an activity log, and any frontend framework or build step.
+## 3. Local setup
 
-## What changed in Module 2 (vs. Module 1)
-
-- **Storage is now in-memory only** (`app/storage.py`, a module-level
-  `dict[str, TaskResponse]`) — not the JSON file. Restarting the server
-  clears all tasks. `data/tasks.json` from Module 1 is no longer read or
-  written by the app; it's left in the repo only as a record of Module 1.
-- **IDs are now UUID strings**, generated with `uuid.uuid4()`, not
-  sequential integers.
-- **`updated_at` was added** alongside `created_at`; both are set server-side
-  and are rejected if a client tries to supply them.
-- **The status-transition rule changed, not just extended.** Module 1's rule
-  was "`Done` can't go back to `ToDo` or `InProgress`." Module 2 replaces it
-  with an explicit allow-list — see the table below. Notably,
-  **`Done → InProgress` (reopening a task) is now allowed**, which Module 1
-  forbade, and **`ToDo → Done` (skipping `InProgress`) is now forbidden**,
-  which Module 1 allowed.
-- **Routes moved from `app/routes/tasks.py` into `app/main.py` directly**,
-  registered on the app instance rather than via a separate `APIRouter`.
-  `app/routes/health.py` is unchanged and still included the same way.
-- **The blank-title error is no longer flattened to a plain string.** Module
-  1 had a custom `RequestValidationError` handler so a blank title returned
-  `{"detail": "Title is required and cannot be blank"}`. Module 2's spec only
-  requires "422 through Pydantic," so that handler was removed — a blank
-  title now returns Pydantic's default nested error shape instead.
-
-## What the mid-course project added
-
-Two scoped features on top of Module 1-3, on branch `mid-course-project`
-(see [docs/midcourse/](docs/midcourse/) for the full user stories, ADR,
-prompt log, and verification evidence):
-
-- **Due dates + overdue.** Optional `due_date` (ISO date) on create/update.
-  `is_overdue` is a *computed* response field (never stored) — true when
-  `due_date` is in the past and `status` isn't `Done`. `GET /tasks?overdue=true`
-  filters to only overdue tasks. Visible on cards as an "Overdue" pill and
-  editable in the New Task/Edit modal.
-- **Search + combined filters.** `GET /tasks?search=<text>` matches
-  case-insensitively against `title` or `description`, and combines via AND
-  with `status`, `priority`, `assignee`, and `overdue`. A filter bar above
-  the board (search box, status/priority dropdowns, overdue checkbox, clear
-  button) drives real backend queries — not client-side filtering.
-
-## Design decisions
-
-- **Storage:** in-memory `dict`, keyed by task id. Simplest option for a
-  learning project with no persistence requirement; resets on every restart.
-- **IDs:** UUID4 strings, assigned in `storage.add_task`.
-- **Update semantics:** `PATCH /tasks/{id}` for partial updates — only the
-  fields you send are changed (`payload.model_dump(exclude_unset=True)`).
-- **Validation:** enforced at the Pydantic model level (`app/models.py`) —
-  title required and non-blank after trimming, max 200 characters,
-  `status`/`priority` restricted to their enums, and unknown fields rejected
-  (`extra="forbid"`) so a client can't sneak in `id`, `created_at`, or
-  `updated_at`.
-- **Business rule:** status transitions are validated against an explicit
-  allow-list (`app/business_rules.py`) rather than an if/elif chain, so the
-  rule and its "what's allowed" error message can't drift apart.
-- **CORS:** the frontend is served separately from the backend (a static
-  file server, not FastAPI), so `CORSMiddleware` allows a small explicit
-  list of local dev origins — not `*` — matching how it's actually run.
-- **`is_overdue` is computed, not stored:** it's a Pydantic `@computed_field`
-  on `TaskResponse`, derived fresh from `due_date`/`status` on every
-  response, so it can never go stale between requests. See
-  `docs/midcourse/mini-adr.md` for the alternative that was rejected.
-
-## Project structure
-
-```
-task-tracker/
-  app/
-    main.py             # FastAPI app instance + all /tasks routes
-    models.py            # TaskStatus, TaskPriority, TaskCreate, TaskUpdate, TaskResponse
-    storage.py            # in-memory dict CRUD (id/created_at/updated_at generated here)
-    business_rules.py      # VALID_TRANSITIONS + validate_status_transition
-    validators.py           # standalone validate_task() utility, independent of FastAPI/Pydantic
-    routes/
-      health.py             # GET /health
-  frontend/
-    index.html              # Kanban board: vanilla HTML/CSS/JS, no build step
-  data/
-    tasks.json               # unused leftover from Module 1 (kept for the record only)
-  tests/
-    conftest.py               # client fixture + autouse storage._reset()
-    test_health.py
-    test_tasks.py              # CRUD/filter/transition + PATCH edge-case tests
-    test_models.py              # Pydantic-level rules (blank title, max length, extra="forbid", etc.)
-    test_validators.py
-    test_due_dates.py            # due_date + is_overdue tests (mid-course project)
-    test_search_filters.py        # search + combined-filter tests (mid-course project)
-    verify_a.py                 # standalone script version of the test_models.py checks
-  docs/
-    midcourse/                  # mid-course project docs (user stories, ADR, prompt log, verification, reflection)
-  requirements.txt
-  .env.example
-  MODULE1_NOTES.md
-  MODULE2_NOTES.md
-  MODULE3_NOTES.md
-```
-
-## Setup
-
-Requires Python 3.10+.
+From the repository root:
 
 ```bash
 python -m venv venv
@@ -135,22 +39,17 @@ pip install -r requirements.txt
 copy .env.example .env       # Windows; `cp .env.example .env` on macOS/Linux
 ```
 
-## Run
+## 4. Run the app locally
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-Swagger UI: http://127.0.0.1:8000/docs
-ReDoc: http://127.0.0.1:8000/redoc
+- Swagger UI: http://127.0.0.1:8000/docs
+- ReDoc: http://127.0.0.1:8000/redoc
+- Storage is in-memory only — restarting the server clears all tasks.
 
-Data lives in memory only — restarting the server clears all tasks.
-
-## Run the frontend
-
-The board is a static file — serve it with any local static server (it
-can't be opened as `file://`, since `fetch` needs a real origin for CORS to
-apply). With the backend already running on `8000`:
+To also use the frontend, in a second terminal:
 
 ```bash
 cd frontend
@@ -158,61 +57,160 @@ python -m http.server 5500
 ```
 
 Open http://localhost:5500/index.html. If you serve it from a different
-port, add that origin to `LOCAL_FRONTEND_ORIGINS` in `app/main.py`.
+port, add that origin to `LOCAL_FRONTEND_ORIGINS` in `app/main.py` (CORS
+only allows an explicit list of local dev origins, not `*`).
 
-## Test
+## 5. Run tests
 
 ```bash
 pytest -v
 ```
 
-## Try it with curl
+Requires `pytest.ini` (repo root, `pythonpath = .`) to resolve `from app
+import storage` in `tests/conftest.py` — without it, bare `pytest -v`
+fails with `ModuleNotFoundError: No module named 'app'` even though
+`python -m pytest` would work fine. Don't remove `pytest.ini`.
 
-Health check:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Create a task (note the response `id` — it's a UUID string, needed for the
-next steps):
-
-```bash
-curl -X POST http://127.0.0.1:8000/tasks \
-  -H "Content-Type: application/json" \
-  -d "{\"title\": \"Ship module 2\", \"priority\": \"High\", \"assignee\": \"Joelle\", \"due_date\": \"2026-08-01\"}"
-```
-
-List tasks, optionally filtered (combine as many as you like):
+There's also a standalone script covering the same model-validation rules
+as `tests/test_models.py`, runnable directly — note it needs `PYTHONPATH`
+set explicitly (confirmed: fails without it, `pytest.ini`'s `pythonpath`
+setting doesn't apply to a bare `python` invocation):
 
 ```bash
-curl http://127.0.0.1:8000/tasks
-curl "http://127.0.0.1:8000/tasks?status=Done"
-curl "http://127.0.0.1:8000/tasks?priority=High"
-curl "http://127.0.0.1:8000/tasks?overdue=true"
-curl "http://127.0.0.1:8000/tasks?search=report"
-curl "http://127.0.0.1:8000/tasks?search=report&status=ToDo&priority=High"
+# macOS/Linux
+PYTHONPATH=. python tests/verify_a.py
+
+# Windows (PowerShell)
+$env:PYTHONPATH="."; python tests\verify_a.py
 ```
 
-Get one task (replace `TASK_ID` with the id from the create response):
+## 6. Run with Docker
 
 ```bash
-curl http://127.0.0.1:8000/tasks/TASK_ID
+docker build -t task-tracker:dev .
+docker run -d --name tt-dev -p 8000:8000 task-tracker:dev
+curl http://localhost:8000/health
+docker exec tt-dev whoami   # expected: app (non-root)
+docker stop tt-dev && docker rm tt-dev
 ```
 
-Update a task (partial — only send the fields you're changing):
+Verified on a real machine (2026-08-26): image builds clean (13/13 steps),
+container starts, `GET /health` returns `200` with the expected JSON body,
+`docker exec tt-dev whoami` → `app`, and `docker history` shows no
+`python:latest` or baked-in secrets. Full write-up in
+[docs/decisions/dockerfile-design.md](docs/decisions/dockerfile-design.md).
 
-```bash
-curl -X PATCH http://127.0.0.1:8000/tasks/TASK_ID \
-  -H "Content-Type: application/json" \
-  -d "{\"status\": \"InProgress\"}"
+The image is a multi-stage build (`python:3.11-slim`, not `latest`),
+copies only the installed dependencies and `app/` — not `tests/`, `docs/`,
+`frontend/`, or any `.env` file — and runs as a non-root `app` user. No
+`--reload` in the container command. It also declares a `HEALTHCHECK`
+against `GET /health`, confirmed live (`docker inspect
+--format='{{.State.Health.Status}}' tt-dev` → `healthy` after the 30s
+start period). See `Dockerfile`, `.dockerignore`, and
+[docs/decisions/dockerfile-design.md](docs/decisions/dockerfile-design.md)
+for the full design rationale, including a real (not reputation-based)
+alpine-vs-slim benchmark.
+
+## 7. CI workflow summary
+
+`.github/workflows/ci.yml` runs on every `push` and `pull_request`:
+checkout → set up Python 3.11 (pinned, not `latest`) → `pip install -r
+requirements.txt` → `pytest -v`. No deployment step. No
+`continue-on-error`, `|| true`, or `--exit-zero` — a test failure fails
+the run.
+
+This was verified with a real green → red → green cycle, not just by
+reading the YAML:
+
+| Commit | Change | CI result |
+|---|---|---|
+| `784f0d2` | baseline | ✅ success |
+| `e3657af` | intentional one-line test break (`tests/test_health.py`) | ❌ failure |
+| `afd25c3` | revert of the above | ✅ success |
+
+(Confirmed via the GitHub Actions API for each commit, not inferred from
+the commit messages alone.)
+
+## 8. Project structure
+
+```
+task-tracker/
+  .github/
+    workflows/
+      ci.yml                   # push/PR: checkout, Python 3.11, pip install, pytest -v
+  app/
+    main.py                    # FastAPI app instance + all /tasks routes
+    models.py                   # TaskStatus, TaskPriority, TaskCreate, TaskUpdate, TaskResponse
+    storage.py                   # in-memory dict CRUD (id/created_at/updated_at generated here)
+    business_rules.py             # VALID_TRANSITIONS + validate_status_transition
+    validators.py                  # standalone validate_task() utility, independent of FastAPI/Pydantic
+    routes/
+      health.py                    # GET /health
+  frontend/
+    index.html                      # Kanban board: vanilla HTML/CSS/JS, no build step
+  data/
+    tasks.json                       # unused leftover from Module 1 (kept for the record only)
+  tests/
+    conftest.py                       # client fixture + autouse storage._reset()
+    test_health.py
+    test_tasks.py                      # CRUD/filter/transition + PATCH edge-case tests
+    test_models.py                      # Pydantic-level rules (blank title, max length, extra="forbid", etc.)
+    test_validators.py
+    test_due_dates.py                    # due_date + is_overdue tests
+    test_search_filters.py                # search + combined-filter tests
+    verify_a.py                            # standalone script version of the test_models.py checks
+  docs/
+    midcourse/                              # mid-course project docs
+    decisions/
+      dockerfile-design.md                    # technical decision note, see § 10 below
+  Dockerfile                                  # multi-stage, non-root, python:3.11-slim
+  .dockerignore
+  pytest.ini                                   # pythonpath = . (see Run tests, above)
+  CLAUDE.md                                     # AI-assistant guidance for this repo
+  requirements.txt
+  .env.example
+  MODULE1_NOTES.md
+  MODULE2_NOTES.md
+  MODULE3_NOTES.md
 ```
 
-Delete a task:
+## 9. Project conventions and current limitations
 
-```bash
-curl -X DELETE http://127.0.0.1:8000/tasks/TASK_ID
-```
+- **Storage is in-memory only** — no database, no persistence. This is
+  deliberate for the course's scope, not an oversight; `data/tasks.json`
+  is Module 1 history, unused by current code.
+- **IDs are UUID4 strings**, not sequential integers.
+- **Status transitions are an explicit allow-list**
+  (`app/business_rules.py`), not an if/elif chain — see `CLAUDE.md` for
+  the full table. `Done → InProgress` (reopen) is allowed; `ToDo → Done`
+  (skipping `InProgress`) is not.
+- **`is_overdue` is computed on every response, never stored** — derived
+  from `due_date`/`status` so it can't go stale between requests.
+- **Validation is Pydantic-level** (`app/models.py`): required non-blank
+  title (≤200 chars), enum-restricted `status`/`priority`, valid ISO
+  `due_date`, and `extra="forbid"` so a client can't set `id`,
+  `created_at`, `updated_at`, or `is_overdue` directly.
+- **No auth, no user accounts, no multi-tenancy, no real-time sync, no
+  production database, no deployment step.** Out of scope for this
+  project; the Docker artifacts exist for local containerized running
+  only, not for shipping anywhere.
+- **`app/validators.py:validate_task`** is a standalone, stdlib-only check,
+  deliberately not called from any route — every request already goes
+  through equivalent validation via `TaskCreate`/`TaskUpdate`, so wiring
+  this in would duplicate that check. It exists for validating a task dict
+  from outside the request pipeline (e.g. a bulk import). It hardcodes its
+  own valid-status/valid-priority lists rather than importing
+  `TaskStatus`/`TaskPriority`, so the two could still drift if one changes
+  without the other — that risk stands regardless of the wiring decision.
+
+## 10. Technical decision notes
+
+- [Dockerfile design](docs/decisions/dockerfile-design.md) — context,
+  alternatives considered, trade-offs, and open questions behind the
+  multi-stage build, beyond what fits in this README's "conventions"
+  section above.
+
+---
 
 ## API reference
 
@@ -224,6 +222,29 @@ curl -X DELETE http://127.0.0.1:8000/tasks/TASK_ID
 | POST   | `/tasks`         | Create a task (201)                           |
 | PATCH  | `/tasks/{id}`    | Partially update a task                       |
 | DELETE | `/tasks/{id}`    | Delete a task (204, no body)                  |
+
+### Try it with curl
+
+```bash
+curl http://127.0.0.1:8000/health
+
+curl -X POST http://127.0.0.1:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d "{\"title\": \"Ship module 4\", \"priority\": \"High\", \"assignee\": \"Joelle\", \"due_date\": \"2026-09-01\"}"
+
+curl http://127.0.0.1:8000/tasks
+curl "http://127.0.0.1:8000/tasks?status=Done"
+curl "http://127.0.0.1:8000/tasks?overdue=true"
+curl "http://127.0.0.1:8000/tasks?search=report&status=ToDo&priority=High"
+
+curl http://127.0.0.1:8000/tasks/TASK_ID
+
+curl -X PATCH http://127.0.0.1:8000/tasks/TASK_ID \
+  -H "Content-Type: application/json" \
+  -d "{\"status\": \"InProgress\"}"
+
+curl -X DELETE http://127.0.0.1:8000/tasks/TASK_ID
+```
 
 ### Status transitions
 

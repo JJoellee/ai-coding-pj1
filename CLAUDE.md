@@ -4,9 +4,10 @@ Guidance for Claude Code (or any AI assistant) working in this repository.
 
 ## 1. Tech stack
 
-- Python — `README.md` states 3.10+; the dev environment used throughout
-  this project is 3.12.2. **[VERIFY]** exact minimum/target version before
-  assuming 3.11 specifically.
+- Python **3.11** — pinned in CI and `Dockerfile`, both with real passing
+  automated evidence. 3.12.2 also worked for local dev throughout this
+  project. 3.10 (an earlier, untested guess in Module 1's original README)
+  should not be assumed to work — it was never actually tried.
 - FastAPI `0.115.0` (`requirements.txt`)
 - Pydantic **v2** `2.9.2` (`requirements.txt`) — confirmed v2-only APIs in
   use: `ConfigDict`, `field_validator`, `computed_field` (`app/models.py`)
@@ -49,8 +50,11 @@ automatically; bare `pytest` does not). Don't remove `pytest.ini`.
   - `business_rules.py` — **this is where task transition rules live**
     (`VALID_TRANSITIONS`, `validate_status_transition`).
   - `routes/health.py` — `GET /health`, included via `app.include_router`.
-  - `validators.py` — standalone `validate_task()` dict-validation utility;
-    not wired into the API, kept for its own tests.
+  - `validators.py` — standalone `validate_task()` dict-validation utility.
+    Deliberately not wired into the API — every request already goes
+    through equivalent validation via `TaskCreate`/`TaskUpdate`, so wiring
+    this in would duplicate that check. Exists for validating a task dict
+    from outside the request pipeline (e.g. a bulk import).
 - **Frontend** (`frontend/index.html`): Kanban board, fetches from the
   backend at `http://localhost:8000`, drag-and-drop, create/edit modal,
   filter bar.
@@ -101,3 +105,19 @@ automatically; bare `pytest` does not). Don't remove `pytest.ini`.
 - Do not add a database.
 - Do not add deployment steps.
 - Do not make major UI changes without asking first.
+
+## 8. CI and Docker (added Module 4)
+
+- **CI** (`.github/workflows/ci.yml`): runs on every `push`/`pull_request`
+  — checkout, Python 3.11 (pinned), `pip install -r requirements.txt`,
+  `pytest -v`. No deploy step, no `continue-on-error`/`|| true`/
+  `--exit-zero`. Verified with a real green → red → green cycle (see
+  `README.md` § CI workflow summary for the actual commit SHAs).
+- **Docker** (`Dockerfile`, `.dockerignore`): multi-stage,
+  `python:3.11-slim` (not `latest`), non-root `app` user, `HEALTHCHECK`
+  against `GET /health`. Both build and run verified live, including
+  `docker exec ... whoami` → `app`. Full rationale — including a real
+  (not reputation-based) alpine-vs-slim benchmark — in
+  `docs/decisions/dockerfile-design.md`.
+- Python version resolved (see § 1): 3.11, on real CI/Docker evidence —
+  no remaining open items from this module.
