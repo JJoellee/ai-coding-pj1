@@ -105,6 +105,27 @@ automatically; bare `pytest` does not). Don't remove `pytest.ini`.
 - Do not add a database.
 - Do not add deployment steps.
 - Do not make major UI changes without asking first.
+- Do not add comments, notifications, multi-tenancy, or any other product
+  feature beyond what's already here — the final project scope is
+  read/verify/fix, not build.
+- **`app/` and `frontend/` are protected.** Only touch them for a small
+  bug fix, security fix, or documentation-supported correction — never a
+  new feature or a stylistic rewrite. Explain any such change in
+  `docs/final-ai-review.md`: what was wrong, the evidence, and the fix.
+- Never paste real `.env` values, credentials, tokens, production logs, or
+  real personal/customer data into this repo or into an AI tool while
+  working in it.
+
+## Read-first guardrail
+
+Before proposing or making a change, read the actual current file(s)
+involved — not just this document's description of them. This file, like
+any docs, can drift from the code; when they disagree, the code is the
+source of truth and this file should be corrected, not the other way
+around. Concretely: read the target file(s) before editing, re-read after
+an external change is flagged, and cite the specific file/line for any
+claim about current behavior rather than reasoning from memory of an
+earlier read.
 
 ## 8. CI and Docker (added Module 4)
 

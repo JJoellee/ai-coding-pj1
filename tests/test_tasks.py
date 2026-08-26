@@ -85,6 +85,39 @@ def test_patch_partial_update_keeps_other_fields(client, created_task):
     assert body["priority"] == created_task["priority"]
 
 
+def test_patch_null_description_normalizes_to_empty_string(client):
+    # Regression test for a real bug found by Module 5's security review
+    # (docs/security-review.md, finding H-03) and independently reproduced:
+    # PATCH {"description": null} used to store None in a field typed as
+    # `str`, which then crashed GET /tasks?search=... with an unhandled 500
+    # once the search term didn't also match the title (short-circuiting
+    # past the buggy `.description.lower()` call otherwise hid it).
+    created = client.post(
+        "/tasks", json={"title": "Alpha", "description": "has a description"}
+    ).json()
+
+    response = client.patch(f"/tasks/{created['id']}", json={"description": None})
+    assert response.status_code == 200
+    assert response.json()["description"] == ""
+
+    search_response = client.get("/tasks", params={"search": "zzz-no-title-match"})
+    assert search_response.status_code == 200
+
+
+def test_patch_null_status_returns_422(client, created_task):
+    # Same bug class as the description case above, found by checking the
+    # other Optional fields on TaskUpdate after fixing description: a
+    # corrupted status=None would later crash any transition attempt on
+    # that task (the error message formatting calls .value on it).
+    response = client.patch(f"/tasks/{created_task['id']}", json={"status": None})
+    assert response.status_code == 422
+
+
+def test_patch_null_priority_returns_422(client, created_task):
+    response = client.patch(f"/tasks/{created_task['id']}", json={"priority": None})
+    assert response.status_code == 422
+
+
 def test_patch_not_found_returns_404(client):
     response = client.patch("/tasks/does-not-exist", json={"title": "New title"})
     assert response.status_code == 404

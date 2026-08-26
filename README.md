@@ -1,5 +1,72 @@
 # Task Tracker API
 
+## Final Project
+
+Branch reviewed: `final-project`
+
+### What this submission demonstrates
+- Existing Task Tracker app still runs inside the intended course scope —
+  verified live, not assumed (see `docs/release-evidence.md`).
+- CI runs the pytest suite on push and pull request
+  (`.github/workflows/ci.yml`), proven with a real green → red → green
+  cycle, not just a passing config.
+- Docker image builds and runs with `/health` returning `200`, a working
+  `HEALTHCHECK`, and a confirmed non-root user (`docker exec tt-dev whoami`
+  → `app`).
+- One real bug (found by the Module 5 security review, then independently
+  reproduced, extended to two more affected fields, fixed, and
+  break-tested) — details in `docs/final-ai-review.md`.
+- AI review, security, and ownership evidence is in `docs/`.
+
+### How to run locally
+```bash
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+### How to run tests
+```bash
+pytest -v
+```
+
+### How to run with Docker
+```bash
+docker build -t task-tracker:dev .
+docker run -d --name tt-dev -p 8000:8000 task-tracker:dev
+curl -i http://localhost:8000/health
+docker exec tt-dev whoami
+docker stop tt-dev && docker rm tt-dev
+```
+
+### Evidence files
+- [docs/release-evidence.md](docs/release-evidence.md)
+- [docs/final-ai-review.md](docs/final-ai-review.md)
+- [docs/ai-playbook.md](docs/ai-playbook.md)
+
+### AI assistance summary
+Across Modules 1–3, ChatGPT handled the earliest planning and user-story draft; 
+GitHub Copilot supplied inline help
+while writing the due-date/overdue model work and storage search filter;
+Cursor consolidated repeated frontend DOM lookups into `formFields`; Codex
+drafted the due-date and search-filter pytest files; and Claude performed
+live browser/network verification and break-tests. Module 4 used Claude
+Code, and Module 5 used Codex for the security, governance, architecture,
+and final-review work.
+I verified the work by: tests (45/45, plus break-tests reverting and
+reconfirming each fix), a real Docker build/run/`/health`/`whoami` check,
+the GitHub Actions API (not just commit messages) for the CI green/red/green
+cycle, and independently reproducing the security review's bug claim
+end-to-end before trusting or fixing it.
+One AI suggestion I corrected: the Module 5 security review correctly
+found that `PATCH {"description": null}` broke a type contract and crashed
+search, but didn't check whether the same bug class affected sibling
+fields. It did — `status`/`priority: null` also corrupted tasks, and worse
+for `status` (it would crash future transition attempts too). Extended the
+fix and the tests to cover all three before considering it closed.
+
 ## 1. Project overview
 
 A CRUD REST API for tracking tasks, built with FastAPI, plus a vanilla-JS
@@ -268,8 +335,9 @@ fields still update normally).
 |-------------------------------------------------|--------|-------------------------------------------------------------------------|
 | Title missing, blank, or over 200 characters     | 422    | Pydantic validation error (nested `detail` list)                        |
 | `due_date` not a valid ISO date                  | 422    | Pydantic date validation error                                          |
-| `status` not one of `ToDo`/`InProgress`/`Done`   | 422    | Pydantic enum validation error                                          |
-| `priority` not one of `Low`/`Medium`/`High`      | 422    | Pydantic enum validation error                                          |
+| `status` not one of `ToDo`/`InProgress`/`Done`, or explicit `null` on `PATCH`   | 422    | Pydantic enum validation error, or `"status cannot be explicitly set to null"` |
+| `priority` not one of `Low`/`Medium`/`High`, or explicit `null` on `PATCH`      | 422    | Pydantic enum validation error, or `"priority cannot be explicitly set to null"` |
+| `description: null` on `PATCH`                   | 200    | Normalized to `""` (not rejected — clearing a description is valid)     |
 | Unknown field in the request body (e.g. `id`, `created_at`, `updated_at`) | 422 | Pydantic `extra_forbidden` validation error                |
 | Invalid status transition                        | 422    | `Invalid status transition from {current} to {new}. Allowed transitions: [...]` |
 | Task ID not found                                | 404    | `Task with id {id} not found`                                           |

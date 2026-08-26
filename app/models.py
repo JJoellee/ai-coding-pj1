@@ -110,6 +110,78 @@ class TaskUpdate(BaseModel):
         """
         return _validate_title(v)
 
+    @field_validator("description")
+    @classmethod
+    def description_none_becomes_empty(cls, v: Optional[str]) -> str:
+        """Normalize an explicit ``null`` description to ``""``.
+
+        ``TaskResponse.description`` is a required ``str`` (not
+        ``Optional``), and ``storage.update_task`` applies this payload via
+        ``model_copy(update=...)``, which does not re-validate. Without
+        this normalization, ``PATCH`` with ``{"description": null}`` would
+        silently store ``None`` in a field typed as ``str``, which later
+        crashes ``storage.get_all_tasks``'s search (``t.description.lower()``
+        on ``None``) with an unhandled 500. ``TaskCreate`` already avoids
+        this via ``payload.description or ""`` in ``storage.add_task``;
+        this keeps ``TaskUpdate`` consistent with that same guarantee.
+
+        Args:
+            v: The raw ``description`` value, if present in the request body.
+
+        Returns:
+            ``v`` unchanged if truthy, otherwise ``""``.
+        """
+        return v or ""
+
+    @field_validator("status")
+    @classmethod
+    def status_must_not_be_null(cls, v: Optional[TaskStatus]) -> TaskStatus:
+        """Reject an explicit ``null`` status — same bug class as
+        ``description``, found by checking the other ``Optional`` fields
+        on this model after fixing ``description``.
+
+        ``TaskResponse.status`` is a required ``TaskStatus`` (not
+        ``Optional``), so a client sending ``{"status": null}`` would
+        otherwise store ``None`` there via the same unvalidated
+        ``model_copy(update=...)`` path. Unlike ``description``, there's no
+        sensible default to coerce to — a task must always have some real
+        status — so this rejects it outright (422) rather than silently
+        substituting a value, matching how ``title`` is handled. Only runs
+        when ``status`` is actually provided (see ``title_must_be_valid``
+        for why).
+
+        Args:
+            v: The raw ``status`` value, if present in the request body.
+
+        Returns:
+            ``v`` unchanged.
+
+        Raises:
+            ValueError: If ``v`` is ``None``.
+        """
+        if v is None:
+            raise ValueError("status cannot be explicitly set to null")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def priority_must_not_be_null(cls, v: Optional[TaskPriority]) -> TaskPriority:
+        """Reject an explicit ``null`` priority — see
+        ``status_must_not_be_null``; identical reasoning, different field.
+
+        Args:
+            v: The raw ``priority`` value, if present in the request body.
+
+        Returns:
+            ``v`` unchanged.
+
+        Raises:
+            ValueError: If ``v`` is ``None``.
+        """
+        if v is None:
+            raise ValueError("priority cannot be explicitly set to null")
+        return v
+
 
 class TaskResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
